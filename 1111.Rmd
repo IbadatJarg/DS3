@@ -1,0 +1,224 @@
+---
+title: "Data Science 3: Final Project"
+author: "Ibadat Jarg"
+output:
+  html_document:
+    theme: null
+    css: "nyt-theme.css"
+    toc: true
+    number_sections: true
+runtime: shiny
+---
+
+![](images/clipboard-2636772088.png)
+
+```{r setup, include=FALSE}
+library(shiny)
+library(tidyverse)
+library(tidytext)
+library(dplyr)
+library(stringr)
+library(tidyverse)
+library(tidytext)
+library(wordcloud)
+library(RColorBrewer)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# ***Introduction and Motivation***
+
+The Second Trump administration has seen an increased amount of government pressure placed on traditional media outlets. This pressure on media has coincided with an increase in political violence in U.S. politics especially against major political figures (Trump 2024, Hortman 2025, Kirk 2025).
+
+```{r fig1, echo=FALSE, out.width="500px", fig.cap = "Donald Trump being escorted off the presmises of a rally in Butler, PA July 2024, after his first assassination attempt - Picture Via NPR"}
+knitr::include_graphics("images/clipboard-2196887421.png")
+```
+
+The case of Charlie Kirk’s assassination, in September 2025, is especially illuminating because certain media outlets that were sympathetic to the assassination were threatened with legal action (PBS NewsHour, 2024) or economic coercion (Grynbaum, 2025). Thus, this project aims to conduct a descriptive analysis about the changing editorial standards in U.S. journalism concerning political violence, seeing whether rhetoric has changed meaningfully.
+
+With the increasing pressure put on free speech in media during the current administration, there is plausible reason to believe that editorial standards may be changing regarding the increased violence seen in U.S. political life. There are also reasons to believe that self-imposed censorship may be applied in a partisan manner, with certain outlets condoning or downplaying certain violence, while condemning others (The Economist, 2025).
+
+```{r fig2, echo=FALSE, out.width="500px", fig.cap = "Firgure from the Economist"}
+knitr::include_graphics("images/clipboard-3367998278.png")
+```
+
+# ***Methodology***
+
+The goal of my research project is to see if there is a noticeable difference in journalistic standards regarding political violence, specifically focusing on the New York Times. To do this I collected articles concerning political violence from January 2024 to October 2025. We divide these articles between 'pre' and 'post' post the 2nd Trump admin based on whether they were published before or after January 2025. We will aim to see if there are any types of tangible differences between the articels before and after this time period. Our analysis application will use 2 types of text analysis, a bag of words representation with TF-IDF and a basic pre-trained transformer BERT model.
+
+## *Why 2 models*
+
+The reasoning behind using 2 diferent types of text representation are becasue The TF-IDF model captures **lexical emphasis**—which terms appear more or less frequently in each period—and reveals measurable differences in vocabulary and tone, such as declining use of explicit violence-related words like *“kill”* or *“shooting”* in later coverage. In contrast, **BERT embeddings** provide **contextual semantic representations** of each article, allowing comparison of the overall meaning and framing rather than individual word counts. When applied to the same corpus of New York Times political articles, these models produce distinct insights: TF-IDF identifies stylistic change, while BERT shows semantic continuity. Together, they illustrate how NLP techniques can quantify rhetorical adaptation in the media and help policymakers and researchers detect subtle shifts in discourse under changing political conditions.
+
+By comparing the two models we can see if the changes in censorship
+
+## *Data Collection*
+
+The dataset was constructed from the NYT developer API and was collected from January 2024 until October 2025. This results in 13 months of articles prior to and 9 months during the 2^nd^ Trump administration. The API calls were instructed to look for articles with abstracts, headlines or keywords containing terms such as ‘political violence’, ‘assassination’, ‘attacks’, ‘shooting’ and ‘gunman,’ among others. This broad search captured articles outside of the U.S. or articles concerning topics outside of politics. These were looked at and removed to limit the scope to U.S. news concerning politics. This exercise resulted in 279 different articles in our corpus, 159 before and 120 after the new presidency, labelled as pre or post.
+
+Unfortunately, the NYT API does not allow for access to the full text of these articles, thus we combined the headlines, abstracts and keywords for each of the articles into one feature called ‘text’. Each entry was relatively short but captured the essence of what the article was about. Below we can see the distribution of the word count for each of the text columns of all articles. It ranges from as few as 5 to as many as 60. Any articles with no words were removed from the corpus.
+
+The frequency of word counts can be seen below:
+
+```{r, echo=FALSE}
+#load the dataset in
+df <- read.csv("nyt_political_violence_2024_25_cleaned_presentation.csv")
+
+windowsFonts(Georgia = windowsFont("Georgia"))
+
+df <- df %>%
+  mutate(
+    word_count = str_count(text, "\\S+")   # count non-space sequences = words
+  )
+
+```
+
+::: shiny-wrapper
+### Word Count Histogram
+
+```{r, echo=FALSE}
+# Dropdown to select subset
+selectInput(
+  inputId = "period",
+  label   = "Sample period:",
+  choices = c("Full sample" = "full",
+              "Pre"         = "pre",
+              "Post"        = "post"),
+  selected = "full"
+)
+
+sliderInput(
+  inputId = "binwidth",
+  label   = "Bin width (number of words per bin):",
+  min     = 1,
+  max     = 10,
+  value   = 5,
+  step    = 1
+)
+
+plotOutput("hist_plot")
+```
+
+```{r, echo=FALSE}
+df_wc <- reactive({
+  # start from full data
+  data <- df
+  
+  # filter based on dropdown
+  if (input$period == "pre") {
+    data <- data %>% filter(pre_post == 1)
+  } else if (input$period == "post") {
+    data <- data %>% filter(pre_post == 0)
+  }
+  # if "full", no filter applied
+
+  data %>%
+    mutate(
+      word_count = str_count(text, "\\S+")
+    )
+})
+
+output$hist_plot <- renderPlot({
+  ggplot(df_wc(), aes(x = word_count)) +
+    geom_histogram(
+      binwidth = input$binwidth,
+      fill     = "white",
+      color    = "grey80",
+      linewidth = 0.5
+    ) +
+    labs(
+      title = "Histogram of Word Counts per Row",
+      x     = "Number of Words",
+      y     = "Number of Rows"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      plot.background  = element_rect(fill = "#f5f5f5", color = NA),
+      panel.background = element_rect(fill = "#f5f5f5", color = NA),
+      panel.grid.major.x = element_blank(),
+      panel.grid.minor.x = element_blank(),
+      panel.grid.major.y = element_line(color = "grey90"),
+      panel.grid.minor.y = element_blank(),
+      axis.title = element_text(size = 10, family = "Georgia"),
+      axis.text  = element_text(size = 10, family = "Georgia"),
+      plot.title = element_text(face = "bold", size = 12, hjust = 0.5, family = "Georgia")
+    )
+})
+```
+:::
+
+# ***Results***
+
+### TF-IDF Vectorization
+
+We implemented TF-IDF with sublinear scaling to adjust for repetition of key political terms like *“Trump,” “President,”* and *“rally.”* Following approaches outlined by Grimmer and Stewart (2013), who used TF-IDF weighting to identify distinctive language and framing differences across political speeches and press releases, this method reduces the influence of very frequent words while emphasizing terms that carry greater discriminative value across documents.
+
+This adjustment surfaced words that better capture framing—e.g., *“security detail,” “Secret Service,”* and *“incident”*—which appear far more often in post-2025 coverage. In contrast, pre-2025 texts still emphasize direct violence descriptors such as *“shooting”* and *“kill.”* This suggests that sublinear scaling helps reveal how language around political violence has become more bureaucratic or procedural under the current administration. Additionally, we have applied a minimum document frequency of 2 to ensure that isolated words for novel articles do not influence our analysis.
+
+```{r fig3, echo=FALSE, out.width="500px", fig.cap = "1"}
+knitr::include_graphics("images/clipboard-1643223763.png")
+
+```
+
+::: shiny-wrapper
+### Word Cloud of Most Frequent Words
+
+```{r, echo=FALSE}
+#Controls for the wordcloud
+sliderInput(
+  inputId = "max_words",
+  label   = "Maximum number of words:",
+  min     = 20,
+  max     = 200,
+  value   = 100,
+  step    = 10
+)
+
+sliderInput(
+  inputId = "min_freq",
+  label   = "Minimum word frequency:",
+  min     = 1,
+  max     = 20,
+  value   = 3,
+  step    = 1
+)
+
+plotOutput("wordcloud_plot", height = "400px")
+
+```
+
+```{r, echo=FALSE}
+# Reactive word frequency table
+word_counts <- reactive({
+  df %>%
+    # break text into words
+    unnest_tokens(word, text) %>%
+    # remove stopwords like "the", "and", etc.
+    anti_join(stop_words, by = "word") %>%
+    count(word, sort = TRUE)
+})
+
+output$wordcloud_plot <- renderPlot({
+  wc <- word_counts()
+  
+  # filter by min frequency slider
+  wc <- wc %>% filter(n >= input$min_freq)
+  
+  set.seed(1)  # for reproducible layout
+  
+  wordcloud(
+    words      = wc$word,
+    freq       = wc$n,
+    max.words  = input$max_words,
+    random.order = FALSE,
+    colors     = brewer.pal(8, "Dark2")
+  )
+})
+```
+:::
+
+### BERT Embeddings
+
+# *Conclusions and Takeaways*
+
+Our findings indicate that
